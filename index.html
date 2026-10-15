@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="it" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Card Tournament Manager - Supabase</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <!-- Supabase JS SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: { brand: { 500: '#6366f1', 600: '#4f46e5' } }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style> 
+        html, body { 
+            font-family: 'Inter', sans-serif; 
+            overflow-x: hidden; 
+            width: 100%;
+        } 
+
+        @media (max-width: 1024px) {
+            .tab-btn { font-size: 1.25rem !important; padding: 1rem 1.4rem !important; font-weight: 700 !important; }
+            #results-section, #admin-panel { padding: 1.25rem !important; }
+            #admin-panel h2 { font-size: 2.1rem !important; font-weight: 700 !important; margin-bottom: 2rem !important; }
+            #round-form { display: flex; flex-direction: column; gap: 1.5rem !important; }
+            #admin-panel label { font-size: 1.7rem !important; font-weight: 600 !important; margin-bottom: 0.6rem !important; }
+            #admin-panel input[type="date"], #admin-panel input[type="number"], #admin-panel input[type="text"] { font-size: 1.8rem !important; padding: 0.9rem !important; border-radius: 0.75rem !important; }
+            #admin-panel .player-name-label { font-size: 1.8rem !important; font-weight: 600 !important; max-width: 220px !important; }
+            #admin-panel input[name^="punti_"] { font-size: 1.9rem !important; width: 9rem !important; padding: 0.75rem !important; text-align: right !important; }
+            #btn-salva { font-size: 1.85rem !important; padding: 1.25rem !important; font-weight: 700 !important; margin-top: 1rem !important; }
+            #table-generale td, #table-vittorie td, #table-statistiche td { padding-top: 0.65rem !important; padding-bottom: 0.65rem !important; font-size: 1.5rem !important; }
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between selection:bg-indigo-500 selection:text-white">
+
+    <header class="bg-slate-900/80 backdrop-blur border-b border-slate-800 sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center relative">
+            <div class="flex items-center space-x-3">
+                <div class="bg-indigo-600 p-2.5 rounded-xl shadow-lg text-2xl">🃏</div>
+                <div>
+                    <h1 class="text-xl font-bold bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent">Card Tournament Manager</h1>
+                    <p class="text-xs text-slate-400" id="user-role-badge">Modalità: Utente (Sola Lettura)</p>
+                </div>
+            </div>
+            
+            <div id="auth-container" class="relative">
+                <button onclick="mostraPopAdmin()" id="btn-login-trigger" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow-md">
+                    <span>🔑</span> Area Admin
+                </button>
+                <button onclick="logout()" id="btn-logout" class="hidden bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-medium px-3 py-2 rounded-xl transition">
+                    🚪 Esci Admin
+                </button>
+
+                <div id="pop-admin-input" class="hidden absolute right-0 top-12 z-50 w-64 p-3 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl">
+                    <form onsubmit="verificaPasswordAdmin(event)" class="flex gap-2">
+                        <input type="password" id="input-pwd-inline" placeholder="Password Admin" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-base text-slate-100 focus:outline-none focus:border-indigo-500">
+                        <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition">OK</button>
+                        <button type="button" onclick="nascondiPopAdmin()" class="bg-slate-800 text-slate-400 text-xs px-2 py-1.5 rounded-lg">✕</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div id="toast-notification" class="hidden fixed top-20 right-4 z-50 max-w-sm p-3.5 rounded-xl shadow-2xl border backdrop-blur-md transition-all duration-300"></div>
+
+    <main id="main-container" class="max-w-7xl w-full mx-auto px-3 py-4 flex-grow grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <section id="admin-panel" class="hidden lg:col-span-1 bg-slate-900/60 backdrop-blur border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xl flex flex-col justify-between space-y-6">
+            <div>
+                <!-- SEZIONE AGGIUNGI GIOCATORE -->
+                <div class="bg-slate-950/50 border border-slate-800/80 rounded-xl p-3.5 mb-6">
+                    <h3 class="text-xs font-semibold text-indigo-400 uppercase tracking-wider mb-2">Aggiungi Nuovo Giocatore</h3>
+                    <form onsubmit="aggiungiNuovoGiocatore(event)" class="flex gap-2">
+                        <input type="text" id="input-nuovo-giocatore" placeholder="Nome giocatore..." required class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500">
+                        <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-3.5 py-2 rounded-lg transition whitespace-nowrap shadow">Aggiungi</button>
+                    </form>
+                </div>
+
+                <!-- FORM INSERIMENTO / MODIFICA ROUND -->
+                <h2 id="form-panel-title" class="text-lg font-semibold text-slate-200 mb-4 flex items-center gap-2"><span>➕</span> Inserisci Nuovo Round</h2>
+
+                <form id="round-form" class="space-y-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-400 mb-1">Data</label>
+                            <input type="date" id="input-data" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-400 mb-1">N° Round</label>
+                            <input type="number" id="input-round" min="1" value="1" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500">
+                        </div>
+                    </div>
+
+                    <div class="border-t border-slate-800 pt-4 mt-2">
+                        <label class="block text-xs font-medium text-slate-400 mb-2">Punteggi Giocatori <span class="text-[10px] text-slate-500">(vuoto se assente)</span></label>
+                        <div id="dynamic-inputs-container" class="space-y-3 max-h-[350px] overflow-y-auto pr-1">
+                            <p class="text-xs text-slate-500 italic">Caricamento giocatori in corso...</p>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-2 mt-4">
+                        <button type="submit" id="btn-salva" class="flex-grow bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2.5 px-4 rounded-xl shadow-lg transition duration-200">
+                            Salva Round
+                        </button>
+                        <button type="button" id="btn-annulla-modifica" onclick="resetFormModifica()" class="hidden bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium py-2.5 px-3 rounded-xl transition">
+                            Annulla
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <section id="results-section" class="lg:col-span-3 bg-slate-900/60 backdrop-blur border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xl overflow-hidden transition-all duration-300">
+            <div class="flex flex-wrap border-b border-slate-800 pb-3 gap-2 mb-4">
+                <button onclick="switchTab('generale')" id="tab-generale" class="tab-btn px-3 py-2 rounded-xl text-xs font-medium bg-indigo-600 text-white shadow-md">🏆 Generale</button>
+                <button onclick="switchTab('vittorie')" id="tab-vittorie" class="tab-btn px-3 py-2 rounded-xl text-xs font-medium bg-slate-800 text-slate-400">🥇 Vittorie</button>
+                <button onclick="switchTab('statistiche')" id="tab-statistiche" class="tab-btn px-3 py-2 rounded-xl text-xs font-medium bg-slate-800 text-slate-400">📊 Statistiche</button>
+                <button onclick="switchTab('storico')" id="tab-storico" class="tab-btn px-3 py-2 rounded-xl text-xs font-medium bg-slate-800 text-slate-400">📜 Storico</button>
+            </div>
+
+            <div id="content-generale" class="tab-content">
+                <h3 class="text-sm font-semibold text-slate-300 mb-3">Classifica Generale</h3>
+                <div class="overflow-x-auto"><table class="w-full text-left text-sm"><tbody id="table-generale"><tr><td class="text-center py-4 text-slate-500">Caricamento dati in corso...</td></tr></tbody></table></div>
+            </div>
+
+            <div id="content-vittorie" class="tab-content hidden">
+                <h3 class="text-sm font-semibold text-slate-300 mb-3">Classifica Vittorie</h3>
+                <div class="overflow-x-auto"><table class="w-full text-left text-sm"><tbody id="table-vittorie"></tbody></table></div>
+            </div>
+
+            <!-- SEZIONE STATISTICHE CON NUOVO ORDINE -->
+            <div id="content-statistiche" class="tab-content hidden">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="text-sm font-semibold text-indigo-400">Statistiche Avanzate Giocatori</h3>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm whitespace-nowrap">
+                        <thead class="bg-slate-950/55 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-800">
+                            <tr>
+                                <th class="py-2.5 px-2 rounded-l-lg">Giocatore</th>
+                                <th class="py-2.5 px-2 text-right">Tot Punti</th>
+                                <th class="py-2.5 px-2 text-right">Media Punti</th>
+                                <th class="py-2.5 px-2 text-center">Presenze</th>
+                                <th class="py-2.5 px-2 text-center">Vittorie</th>
+                                <th class="py-2.5 px-2 text-right">Max</th>
+                                <th class="py-2.5 px-2 text-right">Min</th>
+                                <th class="py-2.5 px-2 text-right rounded-r-lg">% Positivi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table-statistiche" class="divide-y divide-slate-800/50"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="content-storico" class="tab-content hidden">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="text-sm font-semibold text-slate-300">Storico Partite</h3>
+                    <button onclick="mostraGraficoStorico()" id="btn-apri-grafico" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-3 py-2 rounded-xl transition shadow flex items-center gap-1.5">
+                        <span>📈</span> Grafico Andamento
+                    </button>
+                </div>
+                
+                <div id="container-tabella-storico" class="overflow-x-auto">
+                    <table id="table-storico" class="w-full text-left text-sm whitespace-nowrap"></table>
+                </div>
+
+                <div id="container-grafico-storico" class="hidden bg-slate-950/60 border border-slate-800 rounded-2xl p-4 relative mt-2">
+                    <div class="flex justify-between items-center mb-3">
+                        <h4 class="text-sm font-semibold text-indigo-400 flex items-center gap-1.5"><span>📈</span> Andamento Progressivo Punteggi</h4>
+                        <button onclick="chiudiGraficoStorico()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold px-3 py-1.5 rounded-xl transition">
+                            ✕ Chiudi
+                        </button>
+                    </div>
+                    <div class="relative w-full h-[320px] sm:h-[400px]">
+                        <canvas id="canvasAndamentoStorico"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <script src="env-config.js"></script>
+    <script>
+        // --- CONFIGURAZIONE SUPABASE ---
+        
+        const SUPABASE_URL = (window.env && window.env.SUPABASE_URL) || ENV.SUPA_URL;
+        const SUPABASE_ANON_KEY = (window.env && window.env.SUPABASE_ANON_KEY) || ENV.SUPA_ANON_KEY;   
+
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        let globalGiocatori = [];
+        let globalPartiteData = [];
+        let globalStatisticheAvanzate = [];
+        let globalUltimoDatiServer = null;
+        let currentRole = 'user';
+        let chartInstance = null;
+        let isModifying = false;
+        let editingPartitaId = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('input-data').valueAsDate = new Date();
+            document.getElementById('input-round').value = 1;
+            document.getElementById('round-form').addEventListener('submit', handleSubmit);
+            caricaDati();
+        });
+
+        function resetViewport() {
+            window.scrollTo(0, 0);
+            document.body.scrollLeft = 0;
+        }
+
+        function mostraPopAdmin() {
+            const pop = document.getElementById('pop-admin-input');
+            pop.classList.remove('hidden');
+            const input = document.getElementById('input-pwd-inline');
+            input.value = '';
+            input.focus();
+        }
+
+        function nascondiPopAdmin() {
+            document.getElementById('pop-admin-input').classList.add('hidden');
+            document.activeElement.blur();
+            resetViewport();
+        }
+
+        async function verificaPasswordAdmin(e) {
+            e.preventDefault();
+            const pwdInput = document.getElementById('input-pwd-inline').value.trim();
+            if (!pwdInput) return;
+
+            try {
+                const { data, error } = await supabaseClient
+                    .from('impostazioni_app')
+                    .select('valore')
+                    .eq('chiave', 'admin_password')
+                    .single();
+
+                if (error) throw error;
+
+                if (data && data.valore === pwdInput) {
+                    currentRole = 'admin';
+                    document.getElementById('user-role-badge').textContent = 'Modalità: Amministratore';
+                    document.getElementById('admin-panel').classList.remove('hidden');
+                    document.getElementById('results-section').className = "lg:col-span-2 bg-slate-900/60 backdrop-blur border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xl overflow-hidden transition-all duration-300";
+                    document.getElementById('btn-login-trigger').classList.add('hidden');
+                    document.getElementById('btn-logout').classList.remove('hidden');
+                    nascondiPopAdmin();
+                    mostraToast("🔑 Accesso Amministratore autorizzato!", "success");
+
+                    if (globalUltimoDatiServer) renderDati(globalUltimoDatiServer);
+                } else {
+                    nascondiPopAdmin();
+                    mostraToast("❌ Password errata. Accesso negato.", "error");
+                }
+            } catch (err) {
+                console.error("Errore verifica password:", err.message);
+                nascondiPopAdmin();
+                mostraToast("❌ Errore di connessione durante la verifica.", "error");
+            }
+        }
+
+        function logout() {
+            currentRole = 'user';
+            document.getElementById('user-role-badge').textContent = 'Modalità: Utente (Sola Lettura)';
+            document.getElementById('admin-panel').classList.add('hidden');
+            document.getElementById('results-section').className = "lg:col-span-3 bg-slate-900/60 backdrop-blur border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xl overflow-hidden transition-all duration-300";
+            document.getElementById('btn-login-trigger').classList.remove('hidden');
+            document.getElementById('btn-logout').classList.add('hidden');
+            resetFormModifica();
+            resetViewport();
+            mostraToast("👋 Sei uscito dalla modalità amministratore.", "info");
+            if (globalUltimoDatiServer) renderDati(globalUltimoDatiServer);
+        }
+
+        function mostraToast(messaggio, tipo = 'success') {
+            const toast = document.getElementById('toast-notification');
+            toast.textContent = messaggio;
+            if (tipo === 'success') {
+                toast.className = "fixed top-20 right-4 z-50 max-w-sm p-3.5 rounded-xl shadow-2xl border text-xs font-medium bg-emerald-950/90 border-emerald-500/40 text-emerald-200 backdrop-blur-md";
+            } else if (tipo === 'error') {
+                toast.className = "fixed top-20 right-4 z-50 max-w-sm p-3.5 rounded-xl shadow-2xl border text-xs font-medium bg-rose-950/90 border-rose-500/40 text-rose-200 backdrop-blur-md";
+            } else {
+                toast.className = "fixed top-20 right-4 z-50 max-w-sm p-3.5 rounded-xl shadow-2xl border text-xs font-medium bg-slate-900/90 border-slate-700 text-slate-200 backdrop-blur-md";
+            }
+            toast.classList.remove('hidden');
+            setTimeout(() => { toast.classList.add('hidden'); }, 4000);
+        }
+
+        async function aggiungiNuovoGiocatore(e) {
+            e.preventDefault();
+            if (currentRole !== 'admin') return;
+
+            const inputField = document.getElementById('input-nuovo-giocatore');
+            const nomeGiocatore = inputField.value.trim();
+            if (!nomeGiocatore) return;
+
+            try {
+                const { error } = await supabaseClient
+                    .from('giocatori')
+                    .insert([{ nome: nomeGiocatore }]);
+
+                if (error) {
+                    if (error.code === '23505') {
+                        mostraToast(`⚠️ Il giocatore "${nomeGiocatore}" esiste già!`, "error");
+                    } else {
+                        throw error;
+                    }
+                    return;
+                }
+
+                mostraToast(`✅ Giocatore "${nomeGiocatore}" aggiunto con successo!`, "success");
+                inputField.value = '';
+                caricaDati();
+            } catch (err) {
+                mostraToast(`❌ Errore: ${err.message}`, "error");
+            }
+        }
+
+        async function caricaDati() {
+            try {
+                const { data: giocatori, error: errG } = await supabaseClient.from('giocatori').select('*').order('id');
+                if (errG) throw errG;
+
+                const { data: partite, error: errP } = await supabaseClient
+                    .from('partite')
+                    .select('id, data, round, punti_partite(punti, giocatore_id, giocatori(nome))')
+                    .order('data', { ascending: false })
+                    .order('round', { ascending: false });
+                if (errP) throw errP;
+
+                const listaGiocatori = giocatori.map(g => g.nome);
+                
+                const partiteFormattate = partite.map(p => {
+                    let obj = { id: p.id, data: p.data, round: p.round };
+                    p.punti_partite.forEach(pp => {
+                        if (pp.giocatori) {
+                            const nomeG = pp.giocatori.nome;
+                            obj[nomeG] = pp.punti;
+                        }
+                    });
+                    return obj;
+                });
+
+                const processedData = elaboraStatisticheEClassifiche(listaGiocatori, partiteFormattate);
+                globalUltimoDatiServer = processedData;
+                renderDati(processedData);
+
+            } catch (err) {
+                console.error("Errore nel caricamento da Supabase:", err.message);
+                mostraToast("❌ Errore di connessione al database", "error");
+            }
+        }
+
+        function elaboraStatisticheEClassifiche(giocatori, partite) {
+            let generali = {};
+            let vittorie = {};
+            let presenzeMap = {};
+            let maxPuntiMap = {};
+            let minPuntiMap = {};
+            let partitePositiveMap = {};
+
+            giocatori.forEach(g => {
+                generali[g] = 0;
+                vittorie[g] = 0;
+                presenzeMap[g] = 0;
+                maxPuntiMap[g] = -Infinity;
+                minPuntiMap[g] = Infinity;
+                partitePositiveMap[g] = 0;
+            });
+
+            partite.forEach(p => {
+                let maxPunti = -Infinity;
+                let vincitoreRound = null;
+
+                giocatori.forEach(g => {
+                    const val = p[g];
+                    if (val !== undefined && val !== "" && val !== null) {
+                        const pNum = Number(val);
+                        presenzeMap[g]++;
+                        generali[g] += pNum;
+
+                        if (pNum > maxPuntiMap[g]) maxPuntiMap[g] = pNum;
+                        if (pNum < minPuntiMap[g]) minPuntiMap[g] = pNum;
+                        if (pNum > 0) partitePositiveMap[g]++;
+
+                        if (pNum > maxPunti) {
+                            maxPunti = pNum;
+                            vincitoreRound = g;
+                        }
+                    }
+                });
+
+                if (vincitoreRound !== null && maxPunti > 0) {
+                    vittorie[vincitoreRound]++;
+                }
+            });
+
+            const classificaGenerale = giocatori.map(g => ({ nome: g, punti: generali[g], presenze: presenzeMap[g] }))
+                .sort((a, b) => b.punti - a.punti);
+
+            const classificaVittorie = giocatori.map(g => ({ nome: g, vittorie: vittorie[g], presenze: presenzeMap[g] }))
+                .sort((a, b) => b.vittorie - a.vittorie);
+
+            const statisticheAvanzate = giocatori.map(g => {
+                const pres = presenzeMap[g];
+                const totPunti = generali[g];
+                const mediaPunti = pres > 0 ? (totPunti / pres).toFixed(2) : '0.00';
+                const maxP = pres > 0 ? maxPuntiMap[g] : '-';
+                const minP = pres > 0 ? minPuntiMap[g] : '-';
+                const percPositive = pres > 0 ? ((partitePositiveMap[g] / pres) * 100).toFixed(1) : '0.0';
+
+                return {
+                    nome: g,
+                    vittorie: vittorie[g],
+                    totalePunti: totPunti,
+                    mediaPunti: mediaPunti,
+                    presenze: pres,
+                    maxPunti: maxP,
+                    minPunti: minP,
+                    percPositive: percPositive
+                };
+            }).sort((a, b) => b.totalePunti - a.totalePunti);
+
+            return {
+                giocatori,
+                partite,
+                classificaGenerale,
+                classificaVittorie,
+                statisticheAvanzate
+            };
+        }
+
+        function renderDati(data) {
+            globalGiocatori = data.giocatori || [];
+            globalPartiteData = data.partite || [];
+            globalStatisticheAvanzate = data.statisticheAvanzate || [];
+            const container = document.getElementById('dynamic-inputs-container');
+
+            if (globalGiocatori.length === 0) {
+                container.innerHTML = `<p class="text-xs text-amber-400">Nessun giocatore configurato nel database.</p>`;
+                return;
+            }
+
+            container.innerHTML = globalGiocatori.map(g => `
+                <div class="flex items-center justify-between bg-slate-950/40 p-3 rounded-xl border border-slate-800">
+                    <span class="player-name-label text-sm font-medium text-slate-200 truncate max-w-[140px]">${g}</span>
+                    <input type="number" step="any" name="punti_${g}" value="" placeholder="-" class="w-24 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-base text-right text-slate-100 focus:outline-none focus:border-indigo-500">
+                </div>
+            `).join('');
+
+            const formatNomeConPresenze = (nome, presenze) => `${nome} <span class="text-[13px] text-amber-400 font-normal ml-1">(${presenze} pres)</span>`;
+
+            document.getElementById('table-generale').innerHTML = data.classificaGenerale.length ? data.classificaGenerale.map((item, idx) => `
+                <tr class="border-b border-slate-800/50">
+                    <td class="py-2.5 px-2 text-slate-400 font-medium">${idx + 1}°</td>
+                    <td class="py-2.5 px-2 text-slate-200">${formatNomeConPresenze(item.nome, item.presenze)}</td>
+                    <td class="py-2.5 px-2 text-right font-bold text-indigo-400">${item.punti}</td>
+                </tr>
+            `).join('') : `<tr><td colspan="3" class="text-center py-4 text-slate-500">Nessun dato</td></tr>`;
+
+            document.getElementById('table-vittorie').innerHTML = data.classificaVittorie.length ? data.classificaVittorie.map((item, idx) => `
+                <tr class="border-b border-slate-800/50">
+                    <td class="py-2.5 px-2 text-slate-400 font-medium">${idx + 1}°</td>
+                    <td class="py-2.5 px-2 text-slate-200">${formatNomeConPresenze(item.nome, item.presenze)}</td>
+                    <td class="py-2.5 px-2 text-right font-bold text-emerald-400">${item.vittorie} 🏆</td>
+                </tr>
+            `).join('') : `<tr><td colspan="3" class="text-center py-4 text-slate-500">Nessun dato</td></tr>`;
+
+            // Rendering Tabella Statistiche con il nuovo ordine richiesto
+            document.getElementById('table-statistiche').innerHTML = data.statisticheAvanzate && data.statisticheAvanzate.length ? data.statisticheAvanzate.map(item => `
+                <tr class="border-b border-slate-800/50 hover:bg-slate-800/30 transition">
+                    <td class="py-2.5 px-2 font-medium text-slate-200">${item.nome}</td>
+                    <td class="py-2.5 px-2 text-right font-mono font-bold text-indigo-400">${item.totalePunti}</td>
+                    <td class="py-2.5 px-2 text-right font-mono text-slate-200">${item.mediaPunti}</td>
+                    <td class="py-2.5 px-2 text-center font-mono text-slate-300">${item.presenze}</td>
+                    <td class="py-2.5 px-2 text-center font-mono font-bold text-emerald-400">${item.vittorie}</td>
+                    <td class="py-2.5 px-2 text-right font-mono text-emerald-400">${item.maxPunti}</td>
+                    <td class="py-2.5 px-2 text-right font-mono text-rose-400">${item.minPunti}</td>
+                    <td class="py-2.5 px-2 text-right font-mono font-semibold text-amber-400">${item.percPositive}%</td>
+                </tr>
+            `).join('') : `<tr><td colspan="8" class="text-center py-4 text-slate-500">Nessun dato statistico disponibile</td></tr>`;
+
+            const storico = document.getElementById('table-storico');
+            if (!globalPartiteData.length) {
+                storico.innerHTML = `<tr><td class="text-center py-4 text-slate-500">Nessuna partita registrata.</td></tr>`;
+            } else {
+                let ths = `<th class="py-2 px-2 text-xs text-slate-400">Data</th><th class="py-2 px-2 text-xs text-slate-400">Rnd</th>`;
+                globalGiocatori.forEach(g => ths += `<th class="py-2 px-2 text-xs text-slate-400 text-right">${g}</th>`);
+                
+                if (currentRole === 'admin') {
+                    ths += `<th class="py-2 px-2 text-xs text-slate-400 text-center">Azioni</th>`;
+                }
+
+                let trs = globalPartiteData.map((p, index) => {
+                    let r = `<tr class="border-b border-slate-800/50"><td class="py-2 px-2 text-xs text-slate-400">${p.data}</td><td class="py-2 px-2 text-xs font-semibold">${p.round}</td>`;
+                    globalGiocatori.forEach(g => {
+                        const val = p[g];
+                        let displayVal = "";
+                        if (val !== undefined && val !== "" && val !== null && !isNaN(val)) {
+                            displayVal = Number(val) > 0 ? `+${val}` : val;
+                        }
+                        r += `<td class="py-2 px-2 text-right font-mono text-slate-200">${displayVal}</td>`;
+                    });
+
+                    if (currentRole === 'admin') {
+                        r += `<td class="py-2 px-2 text-center whitespace-nowrap">
+                            <button type="button" onclick="preparaModificaPartite(${index})" class="bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-[11px] font-medium px-2.5 py-1 rounded-lg transition mr-1 shadow-sm">✏️ Modifica</button>
+                            <button type="button" onclick="confermaEliminaPartita(${p.id}, '${p.data}', '${p.round}')" class="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-[11px] font-medium px-2.5 py-1 rounded-lg transition shadow-sm">🗑️ Elimina</button>
+                        </td>`;
+                    }
+                    return r + `</tr>`;
+                }).join('');
+                storico.innerHTML = `<thead class="border-b border-slate-800"><tr>${ths}</tr></thead><tbody>${trs}</tbody>`;
+            }
+        }
+
+        function preparaModificaPartite(index) {
+            const p = globalPartiteData[index];
+            if (!p) return;
+
+            isModifying = true;
+            editingPartitaId = p.id;
+            document.getElementById('form-panel-title').innerHTML = `<span>✏️</span> Modifica Round ${p.round} (${p.data})`;
+            document.getElementById('input-data').value = p.data;
+            document.getElementById('input-round').value = p.round;
+            document.getElementById('input-round').readOnly = true;
+            document.getElementById('input-round').classList.add('opacity-60');
+
+            globalGiocatori.forEach(g => {
+                const input = document.querySelector(`input[name="punti_${g}"]`);
+                if (input) {
+                    input.value = (p[g] !== undefined && p[g] !== "" && p[g] !== null) ? p[g] : "";
+                }
+            });
+
+            document.getElementById('btn-salva').textContent = 'Aggiorna Round';
+            document.getElementById('btn-annulla-modifica').classList.remove('hidden');
+            document.getElementById('admin-panel').scrollIntoView({ behavior: 'smooth' });
+            mostraToast(`📝 Caricata partita del ${p.data} (Round ${p.round}) in modifica.`, "info");
+        }
+
+        function resetFormModifica() {
+            isModifying = false;
+            editingPartitaId = null;
+            document.getElementById('form-panel-title').innerHTML = `<span>➕</span> Inserisci Nuovo Round`;
+            document.getElementById('round-form').reset();
+            document.getElementById('input-data').valueAsDate = new Date();
+            document.getElementById('input-round').value = 1;
+            document.getElementById('input-round').readOnly = false;
+            document.getElementById('input-round').classList.remove('opacity-60');
+            document.getElementById('btn-salva').textContent = 'Salva Round';
+            document.getElementById('btn-annulla-modifica').classList.add('hidden');
+        }
+
+        async function confermaEliminaPartita(idPartita, data, round) {
+            if (confirm(`Sei sicuro di voler eliminare la partita del ${data} (Round ${round})?`)) {
+                mostraToast("🗑️ Eliminazione in corso...", "info");
+                try {
+                    const { error } = await supabaseClient.from('partite').delete().eq('id', idPartita);
+                    if (error) throw error;
+                    mostraToast(`✅ Partita del ${data} eliminata con successo!`, "success");
+                    caricaDati();
+                } catch (err) {
+                    mostraToast(`❌ Errore durante l'eliminazione: ${err.message}`, "error");
+                }
+            }
+        }
+
+        async function handleSubmit(e) {
+            e.preventDefault();
+            if (currentRole !== 'admin') return;
+
+            let puntiObj = {};
+            let sommaPunti = 0;
+            let partecipantiCount = 0;
+
+            globalGiocatori.forEach(g => {
+                const el = document.querySelector(`input[name="punti_${g}"]`);
+                const valStr = el ? el.value.trim() : "";
+                if (valStr !== "") {
+                    const valNum = Number(valStr);
+                    if (!isNaN(valNum)) {
+                        puntiObj[g] = valNum;
+                        sommaPunti += valNum;
+                        partecipantiCount++;
+                    } else {
+                        puntiObj[g] = null;
+                    }
+                } else {
+                    puntiObj[g] = null;
+                }
+            });
+
+            if (partecipantiCount === 0) {
+                mostraToast("Inserisci almeno un punteggio prima di salvare!", "error");
+                return;
+            }
+
+            if (Math.abs(sommaPunti) > 0.001) {
+                mostraToast(`Errore: la somma dei punteggi deve essere 0 (attuale: ${sommaPunti}). Controlla i dati!`, "error");
+                return;
+            }
+
+            const btn = document.getElementById('btn-salva');
+            btn.disabled = true;
+            btn.textContent = isModifying ? 'Aggiornamento in corso...' : 'Salvataggio in corso...';
+
+            const dataPartita = document.getElementById('input-data').value;
+            const roundPartita = Number(document.getElementById('input-round').value);
+
+            try {
+                let partitaId = editingPartitaId;
+
+                if (isModifying) {
+                    const { error: errUpd } = await supabaseClient
+                        .from('partite')
+                        .update({ data: dataPartita })
+                        .eq('id', partitaId);
+                    if (errUpd) throw errUpd;
+
+                    await supabaseClient.from('punti_partite').delete().eq('partita_id', partitaId);
+                } else {
+                    const { data: newPartita, error: errIns } = await supabaseClient
+                        .from('partite')
+                        .insert([{ data: dataPartita, round: roundPartita }])
+                        .select()
+                        .single();
+                    if (errIns) throw errIns;
+                    partitaId = newPartita.id;
+                }
+
+                let recordsPunti = [];
+                for (const g of globalGiocatori) {
+                    if (puntiObj[g] !== null) {
+                        const giocatoreObj = await supabaseClient.from('giocatori').select('id').eq('nome', g).single();
+                        if (giocatoreObj.data) {
+                            recordsPunti.push({
+                                partita_id: partitaId,
+                                giocatore_id: giocatoreObj.data.id,
+                                punti: puntiObj[g]
+                            });
+                        }
+                    }
+                }
+
+                const { error: errPunti } = await supabaseClient.from('punti_partite').insert(recordsPunti);
+                if (errPunti) throw errPunti;
+
+                mostraToast(isModifying ? '✨ Round aggiornato con successo!' : '🎉 Round salvato con successo!', 'success');
+                resetFormModifica();
+                caricaDati();
+
+            } catch (err) {
+                mostraToast('❌ Errore server: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Salva Round';
+            }
+        }
+
+        function mostraGraficoStorico() {
+            if (!globalPartiteData || globalPartiteData.length === 0) {
+                mostraToast("Nessun dato disponibile per il grafico.", "error");
+                return;
+            }
+
+            document.getElementById('container-tabella-storico').classList.add('hidden');
+            document.getElementById('btn-apri-grafico').classList.add('hidden');
+            document.getElementById('container-grafico-storico').classList.remove('hidden');
+
+            const giocatoriAttivi = globalGiocatori.filter(g => {
+                const stat = globalStatisticheAvanzate.find(s => s.nome === g);
+                return stat && stat.presenze > 0;
+            });
+
+            const partiteOrdinate = [...globalPartiteData].reverse();
+            const labels = partiteOrdinate.map((p, idx) => `Rnd ${p.round} (${p.data})`);
+            const coloriPalette = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#3b82f6', '#8b5cf6', '#14b8a6', '#f43f5e', '#84cc16', '#06b6d4'];
+
+            const datasets = giocatoriAttivi.map((giocatore, index) => {
+                let sommaCorrente = 0;
+                const datiProgressivi = partiteOrdinate.map(p => {
+                    const puntiRound = Number(p[giocatore]);
+                    if (!isNaN(puntiRound) && p[giocatore] !== "" && p[giocatore] !== null) {
+                        sommaCorrente += puntiRound;
+                    }
+                    return sommaCorrente;
+                });
+
+                return {
+                    label: giocatore,
+                    data: datiProgressivi,
+                    borderColor: coloriPalette[index % coloriPalette.length],
+                    backgroundColor: coloriPalette[index % coloriPalette.length],
+                    borderWidth: 2.5,
+                    pointRadius: 3,
+                    tension: 0.1
+                };
+            });
+
+            const ctx = document.getElementById('canvasAndamentoStorico').getContext('2d');
+            if (chartInstance) chartInstance.destroy();
+
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: { labels: labels, datasets: datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { labels: { color: '#cbd5e1', font: { size: 11 } }, position: 'bottom' } },
+                    scales: {
+                        x: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#94a3b8', font: { size: 10 } } },
+                        y: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#94a3b8', font: { size: 10 } } }
+                    }
+                }
+            });
+        }
+
+        function chiudiGraficoStorico() {
+            document.getElementById('container-grafico-storico').classList.add('hidden');
+            document.getElementById('container-tabella-storico').classList.remove('hidden');
+            document.getElementById('btn-apri-grafico').classList.remove('hidden');
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(el => {
+                el.classList.remove('bg-indigo-600', 'text-white', 'shadow-md');
+                el.classList.add('bg-slate-800', 'text-slate-400');
+            });
+            document.getElementById(`content-${tabId}`).classList.remove('hidden');
+            const btn = document.getElementById(`tab-${tabId}`);
+            btn.classList.remove('bg-slate-800', 'text-slate-400');
+            btn.classList.add('bg-indigo-600', 'text-white', 'shadow-md');
+        }
+    </script>
+</body>
+</html>
