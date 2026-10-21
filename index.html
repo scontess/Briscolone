@@ -45,6 +45,29 @@
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between selection:bg-indigo-500 selection:text-white">
 
+
+<!-- SCHERMATA DI LOGIN INIZIALE -->
+    <div id="auth-screen" class="fixed inset-0 bg-slate-950 z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 max-w-md w-full shadow-2xl">
+            <div class="text-center mb-6">
+                <div class="bg-indigo-600 w-12 h-12 rounded-2xl mx-auto flex items-center justify-center text-2xl shadow-lg mb-3">🃏</div>
+                <h2 class="text-xl font-bold text-slate-100">Card Tournament Manager</h2>
+                <p class="text-xs text-slate-400 mt-1">Inserisci la password per accedere</p>
+            </div>
+            
+            <form onsubmit="gestisciLoginIniziale(event)" class="space-y-4">
+                <div>
+                    <input type="password" id="input-password-login" placeholder="Password di accesso..." required 
+                           class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-100 focus:outline-none focus:border-indigo-500">
+                </div>
+                <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-3 rounded-xl transition shadow-lg shadow-indigo-600/30">
+                    Accedi all'App
+                </button>
+            </form>
+            <div id="login-error" class="hidden mt-3 text-center text-xs text-rose-400 font-medium"></div>
+        </div>
+    </div>
+    
     <header class="bg-slate-900/80 backdrop-blur border-b border-slate-800 sticky top-0 z-40">
         <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center relative">
             <div class="flex items-center space-x-3">
@@ -198,7 +221,7 @@
         // --- CONFIGURAZIONE SUPABASE ---
         
         // --- CONFIGURAZIONE SUPABASE ---
-        const ENV = window.env;    // Mette in comunicazione ENV con window.env di Netlify, nb per farlo andare in locale commenta questa stringa
+        //const ENV = window.env;    // Mette in comunicazione ENV con window.env di Netlify, nb per farlo andare in locale commenta questa stringa
 
 
         const SUPABASE_URL = ENV.SUPABASE_URL;
@@ -206,6 +229,114 @@
   
 
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // Controlla all'avvio se l'utente ha già fatto il login in questa sessione
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedRole = sessionStorage.getItem('app_role');
+            if (savedRole) {
+                applicaRuolo(savedRole);
+            } else {
+                document.getElementById('auth-screen').classList.remove('hidden');
+            }
+
+            document.getElementById('input-data').valueAsDate = new Date();
+            document.getElementById('input-round').value = 1;
+            document.getElementById('round-form').addEventListener('submit', handleSubmit);
+            caricaDati();
+        });
+
+        async function gestisciLoginIniziale(e) {
+            e.preventDefault();
+            const pwdInput = document.getElementById('input-password-login').value.trim();
+            const errorDiv = document.getElementById('login-error');
+            errorDiv.classList.add('hidden');
+
+            try {
+                // Recuperiamo le password configurate nella tabella impostazioni_app
+                const { data, error } = await supabaseClient
+                    .from('impostazioni_app')
+                    .select('chiave, valore');
+
+                if (error) throw error;
+
+                let adminPwd = 'admin'; // Valore di fallback
+                let userPwd = 'user';   // Valore di fallback per gli utenti semplici
+
+                if (data) {
+                    const rowAdmin = data.find(item => item.chiave === 'admin_password');
+                    const rowUser = data.find(item => item.chiave === 'user_password');
+                    if (rowAdmin) adminPwd = rowAdmin.valore;
+                    if (rowUser) userPwd = rowUser.valore;
+                }
+
+                if (pwdInput === adminPwd) {
+                    sessionStorage.setItem('app_role', 'admin');
+                    applicaRuolo('admin');
+                    mostraToast("🔑 Benvenuto Amministratore!", "success");
+                } else if (pwdInput === userPwd) {
+                    sessionStorage.setItem('app_role', 'user');
+                    applicaRuolo('user');
+                    mostraToast("👋 Accesso Utente (Sola Lettura)", "info");
+                } else {
+                    errorDiv.textContent = "❌ Password errata. Riprova.";
+                    errorDiv.classList.remove('hidden');
+                }
+            } catch (err) {
+                console.error("Errore login:", err);
+                errorDiv.textContent = "❌ Errore di connessione al database.";
+                errorDiv.classList.remove('hidden');
+            }
+        }
+
+function applicaRuolo(role) {
+    currentRole = role;
+    document.getElementById('auth-screen').classList.add('hidden');
+    
+    const btnLogout = document.getElementById('btn-logout');
+    if (btnLogout) {
+        if (role === 'admin') {
+            // Mostra il pulsante di uscita solo per l'Admin
+            btnLogout.textContent = '🚪 Esci Admin';
+            btnLogout.classList.remove('hidden');
+        } else {
+            // Nasconde completamente il pulsante per l'utente semplice
+            btnLogout.classList.add('hidden');
+        }
+    }
+
+    const adminPanel = document.getElementById('admin-panel');
+    const resultsSection = document.getElementById('results-section');
+    const roleBadge = document.getElementById('user-role-badge');
+
+    if (role === 'admin') {
+        if (roleBadge) roleBadge.textContent = 'Modalità: Amministratore';
+        if (adminPanel) adminPanel.classList.remove('hidden');
+        if (resultsSection) {
+            resultsSection.className = "lg:col-span-2 bg-slate-900/60 backdrop-blur border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xl overflow-hidden transition-all duration-300";
+        }
+    } else {
+        if (roleBadge) roleBadge.textContent = 'Modalità: Utente (Sola Lettura)';
+        if (adminPanel) adminPanel.classList.add('hidden');
+        if (resultsSection) {
+            resultsSection.className = "lg:col-span-3 bg-slate-900/60 backdrop-blur border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xl overflow-hidden transition-all duration-300";
+        }
+    }
+
+    if (globalUltimoDatiServer) {
+        renderDati(globalUltimoDatiServer);
+    }
+}
+
+        function logout() {
+            sessionStorage.removeItem('app_role');
+            currentRole = 'user';
+            document.getElementById('input-password-login').value = '';
+            document.getElementById('auth-screen').classList.remove('hidden');
+            document.getElementById('btn-logout').classList.add('hidden');
+            resetFormModifica();
+            resetViewport();
+            mostraToast("👋 Disconnessione effettuata.", "info");
+        }
 
         let globalGiocatori = [];
         let globalPartiteData = [];
@@ -460,9 +591,18 @@
                 return;
             }
 
-            container.innerHTML = globalGiocatori.map(g => `
+           container.innerHTML = globalGiocatori.map(g => `
                 <div class="flex items-center justify-between bg-slate-950/40 p-3 rounded-xl border border-slate-800">
-                    <span class="player-name-label text-sm font-medium text-slate-200 truncate max-w-[140px]">${g}</span>
+                    <div class="flex items-center gap-2.5 truncate">
+                        <!-- Icona/Pulsante posizionato PRIMA del nome -->
+                        <button type="button" 
+                                onclick="rinominaGiocatorePerNome('${g.replace(/'/g, "\\'")}')" 
+                                class="bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 p-1.5 rounded-lg text-xs font-semibold transition shrink-0"
+                                title="Rinomina giocatore">
+                            ✏️
+                        </button>
+                        <span class="player-name-label text-sm font-medium text-slate-200 truncate max-w-[140px]">${g}</span>
+                    </div>
                     <input type="number" step="any" name="punti_${g}" value="" placeholder="-" class="w-24 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-base text-right text-slate-100 focus:outline-none focus:border-indigo-500">
                 </div>
             `).join('');
@@ -752,6 +892,64 @@
             btn.classList.remove('bg-slate-800', 'text-slate-400');
             btn.classList.add('bg-indigo-600', 'text-white', 'shadow-md');
         }
+
+
+
+        async function rinominaGiocatorePerNome(vecchioNome) {
+    const nuovoNome = prompt(`Inserisci il nuovo nome per "${vecchioNome}":`, vecchioNome);
+    
+    if (!nuovoNome || nuovoNome.trim() === '' || nuovoNome.trim() === vecchioNome) {
+        return;
+    }
+
+    const nuovoNomePulito = nuovoNome.trim();
+
+    if (!confirm(`Vuoi aggiornare il nome da "${vecchioNome}" a "${nuovoNomePulito}"?\n\nQuesto nome verrà aggiornato automaticamente in tutte le partite e statistiche.`)) {
+        return;
+    }
+
+    try {
+        // 1. Prima cerchiamo l'ID del giocatore partendo dal suo nome nella tabella 'giocatori'
+        const { data: giocatoreTrovato, error: errCerca } = await supabaseClient
+            .from('giocatori')
+            .select('id')
+            .eq('nome', vecchioNome)
+            .single();
+
+        if (errCerca || !giocatoreTrovato) {
+            alert("Impossibile trovare il giocatore nel database.");
+            return;
+        }
+
+        // 2. Ora aggiorniamo il nome usando l'ID trovato
+        const { error: errUpdate } = await supabaseClient
+            .from('giocatori')
+            .update({ nome: nuovoNomePulito })
+            .eq('id', giocatoreTrovato.id);
+
+        if (errUpdate) {
+            if (errUpdate.code === '23505') {
+                alert(`Errore: Il nome "${nuovoNomePulito}" è già utilizzato da un altro giocatore.`);
+            } else {
+                alert(`Errore durante l'aggiornamento: ${errUpdate.message}`);
+            }
+            return;
+        }
+
+        alert(`Giocatore rinominato con successo in "${nuovoNomePulito}"!`);
+        
+        // Ricarica i dati per aggiornare la schermata e le tabelle
+        if (typeof caricaDati === 'function') {
+            caricaDati();
+        } else {
+            location.reload();
+        }
+
+    } catch (err) {
+        console.error("Errore rinominazione:", err);
+        alert("Si è verificato un errore inatteso.");
+    }
+}
     </script>
 </body>
 </html>
